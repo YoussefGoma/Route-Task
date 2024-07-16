@@ -1,6 +1,7 @@
 import Task from '../model/task.js';
+import Category from '../model/category.js';
 import { paginateResults, formatPaginatedResponse } from '../utils/pagination.js';
-import { buildFilterQuery, applySorting } from '../utils/filtration.js';
+import { buildFilterQuery} from '../utils/filtration.js';
 
 export const createTask = async (req, res) => {
   try {
@@ -14,20 +15,39 @@ export const createTask = async (req, res) => {
 
 export const getTasks = async (req, res) => {
   try {
-    const { page, limit, category, shared, sort } = req.query;
-    const baseQuery = { user: req.userId };
-    const query = buildFilterQuery(baseQuery, { category, shared });
+    const {page,limit, category, shared } = req.query;
     const paginationOptions = paginateResults(page, limit);
-    const sortOptions = applySorting(sort);
 
-    const tasks = await Task.find(query, null, {
-      ...paginationOptions,
-      sort: sortOptions,
-    }).populate('category', 'name');
+        const filters = {
+            shared: shared,
+            userId: req.userId,
+            category: category,
+          }
+        Object.keys(filters).forEach(
+            (key) => filters[key] === undefined && delete filters[key]
+          )
 
-    const total = await Task.countDocuments(query);
+          
+          let tasks = new Task()
+          if (filters.category) {
+            const category = await Category.findOne({ name: filters.category })
+            filters.category = category._id
+            tasks = await Task
+              .find(filters)
+              .limit(paginationOptions.limit)
+              .skip(paginationOptions.skip)
+              .populate("category")
+          } else if (!filters.category) {
+            tasks = await Task
+              .find(filters)
+              .limit(paginationOptions.limit)
+              .skip(paginationOptions.skip)
+              .populate("category")
+          }
+          const total = await Task.find(filters).count();
 
-    res.json(formatPaginatedResponse(tasks, total, page, paginationOptions.limit));
+        return res.json(formatPaginatedResponse(tasks, total, page, paginationOptions.limit));
+      
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -35,14 +55,12 @@ export const getTasks = async (req, res) => {
 
 export const getPublicTasks = async (req, res) => {
   try {
-    const { page, limit, sort } = req.query;
+    const { page, limit } = req.query;
     const query = { shared: true };
     const paginationOptions = paginateResults(page, limit);
-    const sortOptions = applySorting(sort);
 
     const tasks = await Task.find(query, null, {
-      ...paginationOptions,
-      sort: sortOptions,
+      ...paginationOptions
     }).populate('category', 'name');
 
     const total = await Task.countDocuments(query);
